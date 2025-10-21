@@ -32,6 +32,10 @@ public class MainForm : Form
     private readonly BindingList<string> _savedPaths = new();
     private AppConfig _config = new();
 
+    // Breadcrumb management
+    private readonly List<ToolStripItem> _breadcrumbItems = new();
+    private int _breadcrumbInsertIndex;
+
     public MainForm()
     {
         Text = "多标签资源管理器";
@@ -39,7 +43,7 @@ public class MainForm : Form
         Height = 800;
         StartPosition = FormStartPosition.CenterScreen;
 
-        // Left: saved paths
+        // Left: saved paths (will be hidden per requirements)
         _split = new SplitContainer
         {
             Dock = DockStyle.Fill,
@@ -122,30 +126,25 @@ public class MainForm : Form
         _txtAddress = new ToolStripTextBox { AutoSize = false, Width = 600 };
         _btnGo = new ToolStripButton("转到");
 
-        _btnNewTab.Click += (_, __) => AddNewTab(_txtAddress.Text.Trim());
+        _btnNewTab.Click += (_, __) => AddNewTab(GetActiveExplorerTab()?.CurrentPath);
         _btnCloseTab.Click += (_, __) => CloseActiveTab();
         _btnUp.Click += (_, __) => GetActiveExplorerTab()?.NavigateUp();
         _btnBrowse.Click += (_, __) =>
         {
             using var dlg = new FolderBrowserDialog();
             dlg.Description = "选择文件夹";
-            if (Directory.Exists(_txtAddress.Text)) dlg.SelectedPath = _txtAddress.Text;
+            var current = GetActiveExplorerTab()?.CurrentPath;
+            if (!string.IsNullOrWhiteSpace(current) && Directory.Exists(current)) dlg.SelectedPath = current!;
             if (dlg.ShowDialog(this) == DialogResult.OK)
             {
-                _txtAddress.Text = dlg.SelectedPath;
                 NavigateCurrentTo(dlg.SelectedPath);
             }
         };
-        _txtAddress.KeyDown += (_, e) =>
-        {
-            if (e.KeyCode == Keys.Enter)
-            {
-                e.SuppressKeyPress = true;
-                NavigateCurrentTo(_txtAddress.Text.Trim());
-            }
-        };
-        _btnGo.Click += (_, __) => NavigateCurrentTo(_txtAddress.Text.Trim());
+        // address textbox is no longer used; keep hidden host only for compatibility
+        _txtAddress.Visible = false;
+        _btnGo.Visible = false;
 
+        // Build base toolbar items; breadcrumbs will be injected after _lblAddress
         _tool.Items.AddRange(new ToolStripItem[]
         {
             _btnNewTab,
@@ -154,18 +153,17 @@ public class MainForm : Form
             _btnUp,
             _btnBrowse,
             new ToolStripSeparator(),
-            _lblAddress,
-            _txtAddress,
-            _btnGo
+            _lblAddress
         });
+        _breadcrumbInsertIndex = _tool.Items.IndexOf(_lblAddress) + 1;
 
-        _tabs = new TabControl { Dock = DockStyle.Fill }; 
+        _tabs = new TabControl { Dock = DockStyle.Fill };
         _tabs.SelectedIndexChanged += (_, __) =>
         {
             var tab = GetActiveExplorerTab();
             if (tab != null)
             {
-                _txtAddress.Text = tab.CurrentPath;
+                UpdateBreadcrumb(tab.CurrentPath);
             }
         };
 
@@ -182,13 +180,25 @@ public class MainForm : Form
 
     private void OnLoaded()
     {
+        // Hide the left saved-paths panel as per requirement
+        _split.Panel1Collapsed = true;
+
         _config = ConfigService.Load();
         foreach (var p in _config.SavedPaths.Distinct().Where(Directory.Exists))
             _savedPaths.Add(p);
         _savedList.DataSource = _savedPaths;
 
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        AddNewTab(Directory.Exists(home) ? home : Environment.CurrentDirectory);
+        var existing = _savedPaths.Distinct().Where(Directory.Exists).ToList();
+        if (existing.Count > 0)
+        {
+            foreach (var p in existing)
+                AddNewTab(p);
+        }
+        else
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            AddNewTab(Directory.Exists(home) ? home : Environment.CurrentDirectory);
+        }
     }
 
     private void TryAddSavedPath(string? path)
@@ -233,9 +243,10 @@ public class MainForm : Form
         {
             if (_tabs.SelectedTab?.Tag == tab)
             {
-                _txtAddress.Text = p;
+                UpdateBreadcrumb(p);
                 _tabs.SelectedTab.Text = Path.GetFileName(p).Length > 0 ? Path.GetFileName(p) : p;
             }
+            SaveOpenTabsToConfig();
         };
         tab.ItemActivated += (fullPath, isDirectory) =>
         {
@@ -276,6 +287,7 @@ public class MainForm : Form
         {
             _tabs.TabPages.Remove(page);
             page.Dispose();
+            SaveOpenTabsToConfig();
         }
     }
 
@@ -288,6 +300,91 @@ public class MainForm : Form
         }
         var tab = GetActiveExplorerTab();
         tab?.NavigateTo(path);
+    }
+
+    private void SaveOpenTabsToConfig()
+    {
+        var paths = new List<string>();
+        foreach (TabPage page in _tabs.TabPages)
+        {
+            if (page.Tag is ExplorerTab t)
+            {
+                var p = t.CurrentPath;
+                if (!string.IsNullOrWhiteSpace(p) && Directory.Exists(p))
+                {
+                    var full = Path.GetFullPath(p);
+                    if (!paths.Any(x => string.Equals(x, full, StringComparison.OrdinalIgnoreCase)))
+                        paths.Add(full);
+                }
+            }
+        }
+
+        _savedPaths.Clear();
+        foreach (var p in paths)
+            _savedPaths.Add(p);
+        SaveConfig();
+    }
+
+    private void UpdateBreadcrumb(string path)
+    {
+        // Remove old breadcrumb items
+        foreach (var it in _breadcrumbItems)
+        {
+            _tool.Items.Remove(it);
+            it.Dispose();
+        }
+        _breadcrumbItems.Clear();
+
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        try
+        {
+            var full = Path.GetFullPath(path);
+            var root = Path.GetPathRoot(full) ?? string.Empty;
+            var segments = new List<(string text, string fullPath)>();
+
+            if (!string.IsNullOrEmpty(root))
+            {
+                var rootDisplay = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (rootDisplay.EndsWith(":"))
+                    rootDisplay = rootDisplay;
+                segments.Add((rootDisplay, root));
+            }
+
+            var remainder = full.Substring(root.Length);
+            if (!string.IsNullOrEmpty(remainder))
+            {
+                var parts = remainder.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
+                string accum = root;
+                foreach (var part in parts)
+                {
+                    accum = Path.Combine(accum, part);
+                    segments.Add((part, accum));
+                }
+            }
+
+            for (int i = 0; i < segments.Count; i++)
+            {
+                var (text, dest) = segments[i];
+                var btn = new ToolStripButton(text) { Tag = dest };
+                btn.Click += (_, __) => NavigateCurrentTo(dest);
+                _breadcrumbItems.Add(btn);
+                if (i < segments.Count - 1)
+                {
+                    var sep = new ToolStripLabel(">") { Enabled = false };
+                    _breadcrumbItems.Add(sep);
+                }
+            }
+
+            for (int i = 0; i < _breadcrumbItems.Count; i++)
+            {
+                _tool.Items.Insert(_breadcrumbInsertIndex + i, _breadcrumbItems[i]);
+            }
+        }
+        catch
+        {
+            // ignore invalid paths
+        }
     }
 
     private void SaveConfig()
