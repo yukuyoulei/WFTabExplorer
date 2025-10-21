@@ -32,9 +32,12 @@ public class MainForm : Form
     private readonly BindingList<string> _savedPaths = new();
     private AppConfig _config = new();
 
-    // Breadcrumb management
+    // 面包屑管理
     private readonly List<ToolStripItem> _breadcrumbItems = new();
     private int _breadcrumbInsertIndex;
+
+    // 地址编辑状态
+    private bool _isEditingAddress = false;
 
     public MainForm()
     {
@@ -42,6 +45,8 @@ public class MainForm : Form
         Width = 1200;
         Height = 800;
         StartPosition = FormStartPosition.CenterScreen;
+        KeyPreview = true; // 使窗体能捕获快捷键
+        KeyDown += OnMainFormKeyDown;
 
         // Left: saved paths (will be hidden per requirements)
         _split = new SplitContainer
@@ -140,8 +145,10 @@ public class MainForm : Form
                 NavigateCurrentTo(dlg.SelectedPath);
             }
         };
-        // address textbox is no longer used; keep hidden host only for compatibility
+        // address textbox for Alt+D 编辑模式
         _txtAddress.Visible = false;
+        _txtAddress.KeyDown += OnAddressBoxKeyDown;
+        _txtAddress.Leave += (_, __) => FinishAddressEdit(false);
         _btnGo.Visible = false;
 
         // Build base toolbar items; breadcrumbs will be injected after _lblAddress
@@ -327,7 +334,7 @@ public class MainForm : Form
 
     private void UpdateBreadcrumb(string path)
     {
-        // Remove old breadcrumb items
+        // 移除旧的面包屑项
         foreach (var it in _breadcrumbItems)
         {
             _tool.Items.Remove(it);
@@ -391,5 +398,92 @@ public class MainForm : Form
     {
         _config.SavedPaths = _savedPaths.ToList();
         ConfigService.Save(_config);
+    }
+
+    private void OnMainFormKeyDown(object? sender, KeyEventArgs e)
+    {
+        // Alt+D 开启地址编辑
+        if (e.Alt && e.KeyCode == Keys.D)
+        {
+            e.Handled = true;
+            StartAddressEdit();
+        }
+    }
+
+    private void StartAddressEdit()
+    {
+        if (_isEditingAddress) return;
+
+        // 隐藏面包屑
+        foreach (var it in _breadcrumbItems)
+        {
+            it.Visible = false;
+        }
+
+        // 插入并显示文本框
+        if (!_tool.Items.Contains(_txtAddress))
+        {
+            _tool.Items.Insert(_breadcrumbInsertIndex, _txtAddress);
+        }
+        _txtAddress.Text = GetActiveExplorerTab()?.CurrentPath ?? string.Empty;
+        _txtAddress.Visible = true;
+        _isEditingAddress = true;
+
+        _txtAddress.Focus();
+        _txtAddress.SelectAll();
+    }
+
+    private void FinishAddressEdit(bool commit)
+    {
+        if (!_isEditingAddress) return;
+
+        if (commit)
+        {
+            var input = (_txtAddress.Text ?? string.Empty).Trim();
+            if (input.Length == 2 && char.IsLetter(input[0]) && input[1] == ':')
+            {
+                input += Path.DirectorySeparatorChar; // 兼容 "C:" -> "C:\"
+            }
+            if (!string.IsNullOrWhiteSpace(input))
+            {
+                if (Directory.Exists(input))
+                {
+                    NavigateCurrentTo(input);
+                }
+                else
+                {
+                    MessageBox.Show(this, "路径不存在", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
+        }
+
+        // 移除文本框，恢复面包屑
+        if (_tool.Items.Contains(_txtAddress))
+        {
+            _tool.Items.Remove(_txtAddress);
+        }
+        _txtAddress.Visible = false;
+
+        // 重新生成面包屑以反映最新路径
+        var current = GetActiveExplorerTab()?.CurrentPath ?? string.Empty;
+        UpdateBreadcrumb(current);
+
+        _isEditingAddress = false;
+    }
+
+    private void OnAddressBoxKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyCode == Keys.Enter)
+        {
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            FinishAddressEdit(true);
+        }
+        else if (e.KeyCode == Keys.Escape)
+        {
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            FinishAddressEdit(false);
+        }
     }
 }
