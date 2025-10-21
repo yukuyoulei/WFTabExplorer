@@ -1,0 +1,89 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Node.js
+node_modules/
+.dist/
+dist/
+build/
+.cache/
+.nyc_output/
+coverage/
+.parcel-cache/
+.next/
+.nuxt/
+.svelte-kit/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.mypy_cache/
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Java / JVM
+.target/
+target/
+.gradle/
+.classpath
+.project
+.settings/
+*.class
+*.jar
+
+# .NET / C#
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.pdb
+*.mdb
+
+# C / C++ / Rust
+build/
+Debug/
+Release/
+x64/
+x86/
+*.obj
+*.o
+*.a
+*.so
+*.dll
+*.lib
+*.exp
+*.ilk
+*.exe
+Cargo.lock
+target/
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.code-workspace
+.vs/
+
+# Misc
+*.swp
+*.swo
+*.tmp
+*.bak
