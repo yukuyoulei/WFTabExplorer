@@ -29,3 +29,11 @@ Build & Run (on Windows)
 Notes
 - The application is designed for Windows only (TargetFramework: net8.0-windows; UseWindowsForms: true).
 - If you need additional shell features (special folders, type description, system image list), we can extend the app with Shell APIs while still relying on native controls.
+
+快捷键
+- Ctrl+T：新建标签
+- Ctrl+W：关闭标签
+- Alt+Up：进入上级目录
+- Alt+D / Ctrl+L：编辑地址栏
+- Ctrl+N：在当前目录新建文件夹
+- F5 / Ctrl+R：刷新当前视图

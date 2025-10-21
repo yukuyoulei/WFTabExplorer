@@ -439,6 +439,12 @@ public class MainForm : Form
             StartAddressEdit();
             return true;
         }
+        if (keyData == (Keys.Control | Keys.N) || keyData == (Keys.Control | Keys.Shift | Keys.N))
+        {
+            var tab = GetActiveExplorerTab();
+            tab?.CreateNewFolder();
+            return true;
+        }
         if (keyData == Keys.F5 || keyData == (Keys.Control | Keys.R))
         {
             var tab = GetActiveExplorerTab();
