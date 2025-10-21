@@ -410,6 +410,45 @@ public class MainForm : Form
         }
     }
 
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (_isEditingAddress)
+        {
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        // 全局快捷键：确保在目录视图(WebBrowser)聚焦时也可触发
+        if (keyData == (Keys.Control | Keys.T))
+        {
+            AddNewTab(GetActiveExplorerTab()?.CurrentPath);
+            return true;
+        }
+        if (keyData == (Keys.Control | Keys.W))
+        {
+            CloseActiveTab();
+            return true;
+        }
+        if (keyData == (Keys.Alt | Keys.Up))
+        {
+            var tab = GetActiveExplorerTab();
+            tab?.NavigateUp();
+            return true;
+        }
+        if (keyData == (Keys.Alt | Keys.D) || keyData == (Keys.Control | Keys.L))
+        {
+            StartAddressEdit();
+            return true;
+        }
+        if (keyData == Keys.F5 || keyData == (Keys.Control | Keys.R))
+        {
+            var tab = GetActiveExplorerTab();
+            tab?.RefreshView();
+            return true;
+        }
+
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
     private void StartAddressEdit()
     {
         if (_isEditingAddress) return;
