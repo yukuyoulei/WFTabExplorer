@@ -102,4 +102,37 @@ public class ExplorerTab : UserControl
             PathChanged?.Invoke(CurrentPath);
         }
     }
+
+    public void CreateNewFolder()
+    {
+        var baseDir = CurrentPath;
+        if (string.IsNullOrWhiteSpace(baseDir) || !Directory.Exists(baseDir)) return;
+        try
+        {
+            string baseName = "新建文件夹";
+            string candidate = Path.Combine(baseDir, baseName);
+            if (Directory.Exists(candidate))
+            {
+                int i = 2;
+                while (Directory.Exists(candidate) && i < 10000)
+                {
+                    candidate = Path.Combine(baseDir, $"{baseName} ({i})");
+                    i++;
+                }
+            }
+            Directory.CreateDirectory(candidate);
+            RefreshView();
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                MessageBox.Show(FindForm(), $"新建文件夹失败：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            catch
+            {
+                // ignore UI errors
+            }
+        }
+    }
 }
