@@ -61,6 +61,18 @@ public class ExplorerTab : UserControl
         if (parent != null) NavigateTo(parent.FullName);
     }
 
+    public void RefreshView()
+    {
+        try
+        {
+            _browser.Refresh(WebBrowserRefreshOption.IfExpired);
+        }
+        catch
+        {
+            // ignore refresh errors
+        }
+    }
+
     private void OnBrowserNavigated(Uri? uri)
     {
         if (uri == null) return;
