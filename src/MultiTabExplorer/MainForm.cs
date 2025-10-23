@@ -148,7 +148,7 @@ public class MainForm : Form
         // address textbox for Alt+D 编辑模式
         _txtAddress.Visible = false;
         _txtAddress.KeyDown += OnAddressBoxKeyDown;
-        _txtAddress.Leave += (_, __) => FinishAddressEdit(false);
+        _txtAddress.LostFocus += (_, __) => FinishAddressEdit(false);
         _btnGo.Visible = false;
 
         // Build base toolbar items; breadcrumbs will be injected after _lblAddress
