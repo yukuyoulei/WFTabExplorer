@@ -57,8 +57,38 @@ public class MainForm : Form
     [DllImport("user32.dll")]
     private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
-    [DllImport("user32.dll")]
-    static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+    // [DllImport("user32.dll")]
+    // static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+    
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct INPUT
+    {
+        public uint type;
+        public InputUnion u;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct InputUnion
+    {
+        [FieldOffset(0)]
+        public MOUSEINPUT mi;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    private const int INPUT_MOUSE = 0;
     private const int MOUSEEVENTF_LEFTDOWN = 0x02;
     private const int MOUSEEVENTF_LEFTUP = 0x04;
 
@@ -259,7 +289,33 @@ public class MainForm : Form
 
         _autoClickTimer = new System.Threading.Timer(callback: _ =>
         {
-            mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+            INPUT[] inputs = new INPUT[]
+            {
+                new INPUT
+                {
+                    type = INPUT_MOUSE,
+                    u = new InputUnion
+                    {
+                        mi = new MOUSEINPUT
+                        {
+                            dwFlags = MOUSEEVENTF_LEFTDOWN
+                        }
+                    }
+                },
+                new INPUT
+                {
+                    type = INPUT_MOUSE,
+                    u = new InputUnion
+                    {
+                        mi = new MOUSEINPUT
+                        {
+                            dwFlags = MOUSEEVENTF_LEFTUP
+                        }
+                    }
+                }
+            };
+
+            SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
         }, null, Timeout.Infinite, Timeout.Infinite);
     }
 
