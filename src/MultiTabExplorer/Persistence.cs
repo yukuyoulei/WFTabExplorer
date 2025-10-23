@@ -8,6 +8,8 @@ namespace MultiTabExplorer;
 public class AppConfig
 {
     public List<string> SavedPaths { get; set; } = new();
+    public int ClickFrequency { get; set; } = 10;
+    public string HotKey { get; set; } = "F8";
 }
 
 public static class ConfigService

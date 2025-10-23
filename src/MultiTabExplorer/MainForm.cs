@@ -4,6 +4,8 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace MultiTabExplorer;
@@ -27,6 +29,12 @@ public class MainForm : Form
     private readonly ToolStripTextBox _txtAddress;
     private readonly ToolStripButton _btnGo;
 
+    private readonly ToolStrip _bottomTool;
+    private readonly ToolStripLabel _hotKeyLabel;
+    private readonly ToolStripTextBox _freqTextBox;
+    private readonly ToolStripButton _startButton;
+    private readonly ToolStripButton _setHotKeyButton;
+
     private readonly TabControl _tabs;
 
     private readonly BindingList<string> _savedPaths = new();
@@ -38,6 +46,21 @@ public class MainForm : Form
 
     // 地址编辑状态
     private bool _isEditingAddress = false;
+
+    private System.Threading.Timer _autoClickTimer;
+    private Keys _autoClickHotKey = Keys.None;
+    private bool _isAutoClicking = false;
+
+    [DllImport("user32.dll")]
+    private static extern bool RegisterHotKey(IntPtr hWnd, int id, int fsModifiers, int vk);
+
+    [DllImport("user32.dll")]
+    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+    [DllImport("user32.dll")]
+    static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+    private const int MOUSEEVENTF_LEFTDOWN = 0x02;
+    private const int MOUSEEVENTF_LEFTUP = 0x04;
 
     public MainForm()
     {
@@ -179,10 +202,65 @@ public class MainForm : Form
         rightPanel.Controls.Add(_tool);
         _split.Panel2.Controls.Add(rightPanel);
 
+        _bottomTool = new ToolStrip { Dock = DockStyle.Bottom };
+        _hotKeyLabel = new ToolStripLabel("热键: " + _autoClickHotKey.ToString());
+        _freqTextBox = new ToolStripTextBox { Text = _config.ClickFrequency.ToString(), Width = 50 };
+        _startButton = new ToolStripButton("开始");
+        _setHotKeyButton = new ToolStripButton("设置热键");
+
+        _startButton.Click += (_, __) =>
+        {
+            if (_isAutoClicking)
+            {
+                StopAutoClick();
+            }
+            else
+            {
+                StartAutoClick();
+            }
+        };
+
+        _setHotKeyButton.Click += (_, __) =>
+        {
+            var result = MessageBox.Show("请按下新的热键，或者按 Esc 取消", "设置热键", MessageBoxButtons.OKCancel);
+            if (result == DialogResult.OK)
+            {
+                // Temporarily listen for the next key press
+                KeyEventHandler handler = null;
+                handler = (s, e) =>
+                {
+                    if (e.KeyCode != Keys.Escape)
+                    {
+                        OnHotKeyChanged(e.KeyCode);
+                        _hotKeyLabel.Text = "热键: " + e.KeyCode.ToString();
+                        _config.HotKey = e.KeyCode.ToString();
+                        SaveConfig();
+                    }
+                    KeyDown -= handler;
+                };
+                KeyDown += handler;
+            }
+        };
+
+        _bottomTool.Items.AddRange(new ToolStripItem[]
+        {
+            new ToolStripLabel("点击频率 (Hz):"),
+            _freqTextBox,
+            _startButton,
+            new ToolStripSeparator(),
+            _hotKeyLabel,
+            _setHotKeyButton
+        });
+        Controls.Add(_bottomTool);
         Controls.Add(_split);
 
         Load += (_, __) => OnLoaded();
         FormClosing += (_, __) => SaveConfig();
+
+        _autoClickTimer = new System.Threading.Timer(callback: _ =>
+        {
+            mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+        }, null, Timeout.Infinite, Timeout.Infinite);
     }
 
     private void OnLoaded()
@@ -191,6 +269,14 @@ public class MainForm : Form
         _split.Panel1Collapsed = true;
 
         _config = ConfigService.Load();
+
+        if (Enum.TryParse<Keys>(_config.HotKey, out Keys hotKey))
+        {
+            OnHotKeyChanged(hotKey);
+            _hotKeyLabel.Text = "热键: " + hotKey.ToString();
+        }
+        _freqTextBox.Text = _config.ClickFrequency.ToString();
+        
         foreach (var p in _config.SavedPaths.Distinct().Where(Directory.Exists))
             _savedPaths.Add(p);
         _savedList.DataSource = _savedPaths;
@@ -397,7 +483,31 @@ public class MainForm : Form
     private void SaveConfig()
     {
         _config.SavedPaths = _savedPaths.ToList();
+        if (int.TryParse(_freqTextBox.Text, out int freq))
+        {
+            _config.ClickFrequency = freq;
+        }
+        else
+        {
+            _config.ClickFrequency = 10;
+        }
         ConfigService.Save(_config);
+    }
+
+    private void OnHotKeyChanged(Keys newHotKey)
+    {
+        // Unregister the old hot key
+        if (_autoClickHotKey != Keys.None)
+        {
+            UnregisterHotKey(Handle, 0);
+        }
+
+        // Register the new hot key
+        _autoClickHotKey = newHotKey;
+        if (_autoClickHotKey != Keys.None)
+        {
+            RegisterHotKey(Handle, 0, 0, (int)_autoClickHotKey);
+        }
     }
 
     private void OnMainFormKeyDown(object? sender, KeyEventArgs e)
@@ -409,6 +519,28 @@ public class MainForm : Form
             StartAddressEdit();
         }
     }
+
+    private void StartAutoClick()
+    {
+        if (int.TryParse(_freqTextBox.Text, out int freq) && freq > 0)
+        {
+            _isAutoClicking = true;
+            _startButton.Text = "停止";
+            _autoClickTimer.Change(0, 1000 / freq);
+        }
+        else
+        {
+            MessageBox.Show("无效的频率");
+        }
+    }
+
+    private void StopAutoClick()
+    {
+        _isAutoClicking = false;
+        _startButton.Text = "开始";
+        _autoClickTimer.Change(Timeout.Infinite, Timeout.Infinite);
+    }
+
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
@@ -455,6 +587,23 @@ public class MainForm : Form
         return base.ProcessCmdKey(ref msg, keyData);
     }
 
+    protected override void WndProc(ref Message m)
+    {
+        base.WndProc(ref m);
+
+        if (m.Msg == 0x0312)
+        {
+            if (_isAutoClicking)
+            {
+                StopAutoClick();
+            }
+            else
+            {
+                StartAutoClick();
+            }
+        }
+    }
+    
     private void StartAddressEdit()
     {
         if (_isEditingAddress) return;
