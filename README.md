@@ -28,7 +28,7 @@ src/
   MultiTabExplorer/        # 历史示例项目（与本次骨架无直接关联）
 ```
 
-## 本地运行步骤
+## 本地开发流程
 ### 1. 启动后端（ASP.NET Core WebSocket）
 1. 安装 [.NET SDK 8](https://dotnet.microsoft.com/zh-cn/download/dotnet/8.0)。
 2. 打开终端并执行：
@@ -37,7 +37,9 @@ src/
    dotnet restore
    dotnet run
    ```
-3. 默认监听地址为 `http://localhost:5000`，WebSocket 端点为 `ws://localhost:5000/ws`。终端会输出收到的请求与返回的结果。
+3. 开发环境默认监听地址为 `http://localhost:6000`，WebSocket 端点为 `ws://localhost:6000/ws`。终端会输出收到的请求与返回的结果。
+
+> 提示：仓库已提供 `Properties/launchSettings.json`，`dotnet run` 会自动使用 `ASPNETCORE_ENVIRONMENT=Development` 并监听 6000 端口。
 
 ### 2. 运行微信小程序客户端
 1. 安装 [微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)。
@@ -49,13 +51,41 @@ src/
    - 点击“获取验证码”即向后端发送 JSON 请求。
    - 收到响应后会弹出 Toast 并在页面下方展示状态。
 
-## 配置项说明
-- WebSocket 地址在 `client/miniprogram/config.js` 中配置：
-  ```js
-  const WS_URL = 'ws://localhost:5000/ws';
+`client/miniprogram/config.js` 会根据小程序当前环境自动选择 WS 地址：
+- 开发版（develop）：`ws://localhost:6000/ws`
+- 体验版 / 线上版（trial/release）：`wss://kccoding.top/wechat/ws`
+
+## 生产部署指引
+### 1. Kestrel 监听端口与协议
+- 生产环境通过 Kestrel 直接监听 `https://0.0.0.0:443`，提供 `/wechat/ws` 与回退兼容的 `/ws` 两个 WebSocket 路径。
+- 同时监听 `http://0.0.0.0:80` 并自动重定向至 HTTPS（`app.UseHttpsRedirection()`）。
+- 若仅在本地开发，继续使用 `http://0.0.0.0:6000`。
+
+### 2. 证书加载（.pfx）
+- 通过环境变量提供证书路径与密码：
+  - `CERT_PATH`
+  - `CERT_PASSWORD`
+- 若未设置上述变量，将回退读取：
+  - `ASPNETCORE_Kestrel__Certificates__Default__Path`
+  - `ASPNETCORE_Kestrel__Certificates__Default__Password`
+- 示例：
+  ```bash
+  export CERT_PATH=/etc/ssl/kccoding.top/site.pfx
+  export CERT_PASSWORD=请替换为真实密码
+  dotnet run --configuration Release
   ```
-  部署至其他环境时修改此值即可，建议与后端部署地址保持一致。
-- WebSocket 工具封装位于 `client/miniprogram/utils/ws.js`，包含自动重连、消息队列与事件订阅等基础能力，可根据业务需求扩展。
+- 启动日志会输出证书路径与监听端口，便于确认配置是否生效。未找到证书或密码时，程序会给出明确的中文错误信息。
+
+### 3. Linux 低端口绑定权限
+Linux 上监听 80/443 需要 root 权限或为 `dotnet` 可执行文件授予特权：
+```bash
+sudo setcap 'cap_net_bind_service=+ep' $(readlink -f $(which dotnet))
+```
+执行后无需使用 root 即可绑定低位端口。
+
+### 4. 日志与排查
+- 启动成功后可在日志中看到“生产环境启动……”并显示证书路径。
+- 每次 WebSocket 建立连接、接收请求、发送响应和关闭均会输出日志，便于排查问题。
 
 ## WebSocket 消息约定
 - 客户端 → 服务端
@@ -75,12 +105,12 @@ src/
   ```
   当邮箱格式非法时，`success` 为 `false`，`message` 提示错误原因。
 
-## 后续可拓展方向（非本次范围）
-- 接入真实的邮件服务（SMTP 或第三方 API），发送并校验验证码。
-- 使用 HTTPS / WSS 与域名白名单，满足微信小程序上线要求。
-- 对接云托管或容器化部署脚本，对接日志与监控系统。
-- 增加验证码倒计时、请求频率限制与持久化日志。
+## 小程序上线配置
+1. 在微信公众平台“小程序管理后台 → 开发 → 开发管理 → 开发设置”中，将 `wss://kccoding.top` 添加到 “socket 合法域名”。
+2. 后端已在 `/wechat/ws` 暴露与 `/ws` 相同的 WebSocket 逻辑，上线时只需使用 `wss://kccoding.top/wechat/ws`。
+3. 首次发布必须使用 HTTPS/WSS 证书；路径前缀 `/wechat` 由 Kestrel 服务端直接提供，无需额外反向代理。
 
 ## 注意事项
 - 示例后端仅用于演示，不包含数据库或真实验证码发送逻辑。
-- 小程序在真机调试或上线前，请将 WebSocket 地址切换为支持 `wss://` 的生产环境并在微信公众平台配置合法域名。
+- 如需扩展真实邮件服务、日志或监控，可在现有骨架上继续开发。
+- 小程序在真机调试或上线前，请确认已切换至支持 `wss://` 的生产环境并完成合法域名配置。
