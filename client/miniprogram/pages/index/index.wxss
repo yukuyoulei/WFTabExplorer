@@ -24,6 +24,22 @@
   color: #111827;
 }
 
+.status-area {
+  min-height: 56rpx;
+  display: flex;
+  align-items: center;
+}
+
+.status.info {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+}
+
+.status.warning {
+  background-color: #fffbeb;
+  color: #92400e;
+}
+
 .input {
   border: 2rpx solid #e5e7eb;
   border-radius: 16rpx;
