@@ -87,3 +87,11 @@ target/
 *.swo
 *.tmp
 *.bak
+
+# WeChat Mini Program
+client/miniprogram/miniprogram_npm/
+client/miniprogram/node_modules/
+client/miniprogram/project.private.config.json
+client/miniprogram/.tea/
+client/miniprogram/.idea/
+client/miniprogram/.vscode/
