@@ -51,6 +51,13 @@ src/
    - 点击“获取验证码”即向后端发送 JSON 请求。
    - 收到响应后会弹出 Toast 并在页面下方展示状态。
 
+### 3. 页面交互与调试提示
+- 页面包含邮箱输入框与“获取验证码”按钮，顶部状态条会显示“连接中 / 已连接 / 未连接 / 重试次数”，断线后会自动重试直至达到设定的最大次数。
+- 邮箱输入框采用文本类型配合正则校验，输入非法邮箱时按钮会禁用并提示“邮箱格式不正确”。
+- 点击按钮后会通过 WebSocket 发送 `{ type: "RequestCode", email }`，收到 `{ type: "CodeSent", success, message }` 后以 Toast 呈现服务端返回内容。
+- 微信开发者工具中可通过“调试器 → Network → WS”查看建连、断开与消息收发详情，本地调试时请确保已关闭合法域名校验。
+- 体验版 / 正式版需在“小程序后台 → 开发设置”中配置 `wss://kccoding.top` 为 socket 合法域名，并保持默认的 `/wechat/ws` 接口路径。
+
 `client/miniprogram/config.js` 会根据小程序当前环境自动选择 WS 地址：
 - 开发版（develop）：`ws://localhost:6000/ws`
 - 体验版 / 线上版（trial/release）：`wss://kccoding.top/wechat/ws`
