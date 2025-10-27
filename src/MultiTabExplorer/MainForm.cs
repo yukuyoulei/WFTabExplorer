@@ -19,6 +19,8 @@ public class MainForm : Form
     private readonly Button _btnSaveCurrent;
     private readonly Button _btnBrowseAdd;
     private readonly Button _btnOpenSavedNewTab;
+    private readonly ToolTip _savedListToolTip;
+    private int _lastSavedListHoverIndex = -1;
 
     private readonly GroupBox _driveGroup;
     private readonly FlowLayoutPanel _drivePanel;
@@ -111,7 +113,8 @@ public class MainForm : Form
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
-            SplitterDistance = 260,
+            SplitterDistance = 180,
+            Panel1MinSize = 150,
         };
 
         _savedGroup = new GroupBox
@@ -138,6 +141,14 @@ public class MainForm : Form
             {
                 RemoveSelectedSavedPath();
             }
+        };
+
+        _savedListToolTip = new ToolTip();
+        _savedList.MouseMove += OnSavedListMouseMove;
+        _savedList.MouseLeave += (_, __) =>
+        {
+            _savedListToolTip.Hide(_savedList);
+            _lastSavedListHoverIndex = -1;
         };
 
         _savedButtons = new FlowLayoutPanel
@@ -872,6 +883,36 @@ public class MainForm : Form
         foreach (Control control in _drivePanel.Controls)
         {
             control.Width = targetWidth;
+        }
+    }
+
+    private void OnSavedListMouseMove(object? sender, MouseEventArgs e)
+    {
+        var index = _savedList.IndexFromPoint(e.Location);
+        if (index >= 0 && index < _savedList.Items.Count)
+        {
+            var item = _savedList.Items[index];
+            var itemText = item?.ToString() ?? string.Empty;
+            var currentTip = _savedListToolTip.GetToolTip(_savedList) ?? string.Empty;
+
+            if (index != _lastSavedListHoverIndex || !string.Equals(itemText, currentTip, StringComparison.Ordinal))
+            {
+                if (!string.IsNullOrWhiteSpace(itemText))
+                {
+                    _savedListToolTip.SetToolTip(_savedList, itemText);
+                }
+                else
+                {
+                    _savedListToolTip.Hide(_savedList);
+                }
+
+                _lastSavedListHoverIndex = index;
+            }
+        }
+        else if (_lastSavedListHoverIndex != -1)
+        {
+            _savedListToolTip.Hide(_savedList);
+            _lastSavedListHoverIndex = -1;
         }
     }
 }

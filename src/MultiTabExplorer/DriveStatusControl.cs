@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
@@ -12,6 +13,7 @@ public class DriveStatusControl : UserControl
     private readonly ProgressBar _progressBar;
     private readonly Label _lblSpaceInfo;
     private readonly Panel _contentPanel;
+    private readonly ToolTip _toolTip;
 
     public event Action<string>? DriveClicked;
 
@@ -27,6 +29,8 @@ public class DriveStatusControl : UserControl
         Padding = new Padding(8);
         BackColor = SystemColors.Control;
 
+        _toolTip = new ToolTip();
+
         _contentPanel = new Panel
         {
             Dock = DockStyle.Fill,
@@ -39,7 +43,8 @@ public class DriveStatusControl : UserControl
             Dock = DockStyle.Top,
             Height = 20,
             Font = new Font(Font.FontFamily, 10, FontStyle.Bold),
-            TextAlign = ContentAlignment.MiddleLeft
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoEllipsis = true
         };
 
         _lblDriveType = new Label
@@ -49,7 +54,8 @@ public class DriveStatusControl : UserControl
             Height = 16,
             Font = new Font(Font.FontFamily, 8),
             ForeColor = Color.Gray,
-            TextAlign = ContentAlignment.MiddleLeft
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoEllipsis = true
         };
 
         _progressBar = new ProgressBar
@@ -67,7 +73,8 @@ public class DriveStatusControl : UserControl
             Dock = DockStyle.Top,
             Height = 16,
             Font = new Font(Font.FontFamily, 8),
-            TextAlign = ContentAlignment.MiddleLeft
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoEllipsis = true
         };
 
         _contentPanel.Controls.Add(_lblSpaceInfo);
@@ -149,7 +156,7 @@ public class DriveStatusControl : UserControl
                         ? percent.ToString("0.#")
                         : percent.ToString("0.##");
 
-                _lblSpaceInfo.Text = $"已用 {FormatSize(usedBytes)} · 可用 {FormatSize(freeBytes)} / 共 {FormatSize(totalBytes)}（使用率 {percentText}%）";
+                _lblSpaceInfo.Text = $"{FormatSize(freeBytes)} 可用 / 共 {FormatSize(totalBytes)} ({percentText}%)";
 
                 if (usedPercentage >= 90)
                     _progressBar.ForeColor = Color.Red;
@@ -169,6 +176,8 @@ public class DriveStatusControl : UserControl
             _progressBar.Value = 0;
             _lblSpaceInfo.Text = "无法读取驱动器信息";
         }
+
+        UpdateToolTip();
     }
 
     private void OnControlClick(object? sender, EventArgs e)
@@ -201,5 +210,23 @@ public class DriveStatusControl : UserControl
             return $"{bytes / (1024.0 * 1024 * 1024):0.##} GB";
         else
             return $"{bytes / (1024.0 * 1024 * 1024 * 1024):0.##} TB";
+    }
+
+    private void UpdateToolTip()
+    {
+        var lines = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_lblDriveName.Text)) lines.Add(_lblDriveName.Text);
+        if (!string.IsNullOrWhiteSpace(_lblDriveType.Text)) lines.Add(_lblDriveType.Text);
+        if (!string.IsNullOrWhiteSpace(_lblSpaceInfo.Text)) lines.Add(_lblSpaceInfo.Text);
+        if (!string.IsNullOrWhiteSpace(_drivePath)) lines.Add(_drivePath);
+
+        var text = string.Join("\n", lines);
+
+        _toolTip.SetToolTip(this, text);
+        _toolTip.SetToolTip(_contentPanel, text);
+        _toolTip.SetToolTip(_lblDriveName, text);
+        _toolTip.SetToolTip(_lblDriveType, text);
+        _toolTip.SetToolTip(_progressBar, text);
+        _toolTip.SetToolTip(_lblSpaceInfo, text);
     }
 }
