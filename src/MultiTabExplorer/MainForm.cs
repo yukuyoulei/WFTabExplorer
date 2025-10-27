@@ -20,6 +20,11 @@ public class MainForm : Form
     private readonly Button _btnBrowseAdd;
     private readonly Button _btnOpenSavedNewTab;
 
+    private readonly GroupBox _driveGroup;
+    private readonly FlowLayoutPanel _drivePanel;
+    private readonly Dictionary<string, DriveStatusControl> _driveControls = new(StringComparer.OrdinalIgnoreCase);
+    private System.Windows.Forms.Timer _driveRefreshTimer;
+
     private readonly ToolStrip _tool;
     private readonly ToolStripButton _btnNewTab;
     private readonly ToolStripButton _btnCloseTab;
@@ -172,7 +177,43 @@ public class MainForm : Form
         _savedButtons.Controls.AddRange(new Control[] { _btnSaveCurrent, _btnBrowseAdd, _btnOpenSavedNewTab });
         _savedGroup.Controls.Add(_savedList);
         _savedGroup.Controls.Add(_savedButtons);
-        _split.Panel1.Controls.Add(_savedGroup);
+
+        _driveGroup = new GroupBox
+        {
+            Dock = DockStyle.Fill,
+            Text = "驱动器列表",
+            Padding = new Padding(8),
+        };
+        _drivePanel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            AutoScroll = true,
+            Padding = new Padding(0),
+        };
+        _drivePanel.Resize += (_, __) => UpdateDriveControlWidths();
+        _driveGroup.Controls.Add(_drivePanel);
+
+        var leftLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = new Padding(0),
+            Padding = new Padding(0)
+        };
+        leftLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
+        leftLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
+        leftLayout.Controls.Add(_driveGroup, 0, 0);
+        leftLayout.Controls.Add(_savedGroup, 0, 1);
+        _split.Panel1.Controls.Add(leftLayout);
+
+        _driveRefreshTimer = new System.Windows.Forms.Timer
+        {
+            Interval = 3000
+        };
+        _driveRefreshTimer.Tick += (_, __) => RefreshDriveList();
 
         // Right: tool + tabs
         _tool = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, RenderMode = ToolStripRenderMode.System };
@@ -285,7 +326,11 @@ public class MainForm : Form
         Controls.Add(_split);
 
         Load += (_, __) => OnLoaded();
-        FormClosing += (_, __) => SaveConfig();
+        FormClosing += (_, __) =>
+        {
+            _driveRefreshTimer?.Stop();
+            SaveConfig();
+        };
 
         _autoClickTimer = new System.Threading.Timer(callback: _ =>
         {
@@ -321,8 +366,9 @@ public class MainForm : Form
 
     private void OnLoaded()
     {
-        // Hide the left saved-paths panel as per requirement
-        _split.Panel1Collapsed = true;
+        _split.Panel1Collapsed = false;
+        _driveGroup.Visible = true;
+        _savedGroup.Visible = true;
 
         _config = ConfigService.Load();
 
@@ -348,6 +394,9 @@ public class MainForm : Form
             var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             AddNewTab(Directory.Exists(home) ? home : Environment.CurrentDirectory);
         }
+
+        RefreshDriveList();
+        _driveRefreshTimer.Start();
     }
 
     private void TryAddSavedPath(string? path)
@@ -734,6 +783,95 @@ public class MainForm : Form
             e.Handled = true;
             e.SuppressKeyPress = true;
             FinishAddressEdit(false);
+        }
+    }
+
+    private void RefreshDriveList()
+    {
+        _drivePanel.SuspendLayout();
+
+        try
+        {
+            var drives = DriveInfo.GetDrives()
+                .Where(d =>
+                {
+                    try
+                    {
+                        return d.IsReady;
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                })
+                .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var activeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var drive in drives)
+            {
+                var key = drive.Name.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                activeKeys.Add(key);
+
+                if (!_driveControls.TryGetValue(key, out var control))
+                {
+                    control = new DriveStatusControl();
+                    control.DriveClicked += path => NavigateCurrentTo(path);
+                    _driveControls[key] = control;
+                    _drivePanel.Controls.Add(control);
+                }
+
+                control.UpdateFromDrive(drive);
+            }
+
+            foreach (var key in _driveControls.Keys.ToList())
+            {
+                if (!activeKeys.Contains(key))
+                {
+                    if (_driveControls[key] is Control ctrl)
+                    {
+                        _drivePanel.Controls.Remove(ctrl);
+                        ctrl.Dispose();
+                    }
+                    _driveControls.Remove(key);
+                }
+            }
+
+            for (int i = 0; i < drives.Count; i++)
+            {
+                var key = drives[i].Name.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (_driveControls.TryGetValue(key, out var ctrl))
+                {
+                    _drivePanel.Controls.SetChildIndex(ctrl, i);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine(ex);
+        }
+        finally
+        {
+            _drivePanel.ResumeLayout();
+            UpdateDriveControlWidths();
+        }
+    }
+
+    private void UpdateDriveControlWidths()
+    {
+        if (_drivePanel.Controls.Count == 0) return;
+
+        var targetWidth = _drivePanel.ClientSize.Width - _drivePanel.Padding.Horizontal;
+        if (_drivePanel.VerticalScroll.Visible)
+        {
+            targetWidth -= SystemInformation.VerticalScrollBarWidth;
+        }
+        targetWidth = Math.Max(80, targetWidth);
+
+        foreach (Control control in _drivePanel.Controls)
+        {
+            control.Width = targetWidth;
         }
     }
 }
