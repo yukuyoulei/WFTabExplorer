@@ -7,6 +7,7 @@
 ### 📁 文件管理
 - **多标签浏览**：同时打开多个文件夹标签页，轻松切换
 - **面包屑导航**：清晰的路径导航栏，快速跳转到上级目录
+- **驱动器概览**：左侧面板实时展示系统中各驱动器的容量和可用空间，点击即可跳转
 - **路径保存**：自动保存打开的标签页路径，下次启动自动恢复
 - **快速导航**：
   - 支持上级目录跳转
@@ -69,6 +70,7 @@ dotnet publish src/MultiTabExplorer/MultiTabExplorer.csproj -c Release -r win-x6
 ### 基本操作
 
 1. **打开文件夹**：
+   - 点击左侧驱动器列表中的任意驱动器快速进入
    - 点击"浏览"按钮选择文件夹
    - 双击文件夹项进入子目录
    - 点击面包屑导航快速跳转
@@ -100,12 +102,13 @@ dotnet publish src/MultiTabExplorer/MultiTabExplorer.csproj -c Release -r win-x6
 MultiTabExplorer/
 ├── src/
 │   └── MultiTabExplorer/
-│       ├── Program.cs           # 程序入口
-│       ├── MainForm.cs          # 主窗体（工具栏、标签管理、自动点击）
-│       ├── ExplorerTab.cs       # 单个资源管理器标签页
-│       ├── Persistence.cs       # 配置持久化服务
-│       ├── NativeIcons.cs       # Windows 原生图标支持
-│       ├── app.manifest         # 应用清单文件
+│       ├── Program.cs               # 程序入口
+│       ├── MainForm.cs              # 主窗体（工具栏、标签管理、自动点击、驱动器列表）
+│       ├── ExplorerTab.cs           # 单个资源管理器标签页
+│       ├── DriveStatusControl.cs    # 驱动器状态显示控件
+│       ├── Persistence.cs           # 配置持久化服务
+│       ├── NativeIcons.cs           # Windows 原生图标支持
+│       ├── app.manifest             # 应用清单文件
 │       └── MultiTabExplorer.csproj
 ├── MultiTabExplorer.sln
 ├── .gitignore
