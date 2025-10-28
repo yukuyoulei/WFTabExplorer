@@ -12,6 +12,8 @@ namespace MultiTabExplorer;
 
 public class MainForm : Form
 {
+    private const int LeftPaneMaxWidth = 200;
+
     private readonly SplitContainer _split;
     private readonly GroupBox _savedGroup;
     private readonly ListBox _savedList;
@@ -118,19 +120,13 @@ public class MainForm : Form
         };
         _split.SplitterMoving += (_, e) =>
         {
-            if (e.SplitX > 200)
+            if (e.SplitX > LeftPaneMaxWidth)
             {
-                e.Cancel = true;
-                _split.SplitterDistance = 200;
+                e.SplitX = LeftPaneMaxWidth;
             }
         };
-        _split.SplitterMoved += (_, __) =>
-        {
-            if (_split.SplitterDistance > 200)
-            {
-                _split.SplitterDistance = 200;
-            }
-        };
+        _split.SplitterMoved += (_, __) => EnsureLeftPaneMaxWidth();
+        _split.SizeChanged += (_, __) => EnsureLeftPaneMaxWidth();
 
         _savedGroup = new GroupBox
         {
@@ -395,6 +391,7 @@ public class MainForm : Form
         _split.Panel1Collapsed = false;
         _driveGroup.Visible = true;
         _savedGroup.Visible = true;
+        EnsureLeftPaneMaxWidth();
 
         _config = ConfigService.Load();
 
@@ -898,6 +895,14 @@ public class MainForm : Form
         foreach (Control control in _drivePanel.Controls)
         {
             control.Width = targetWidth;
+        }
+    }
+
+    private void EnsureLeftPaneMaxWidth()
+    {
+        if (_split.SplitterDistance > LeftPaneMaxWidth)
+        {
+            _split.SplitterDistance = LeftPaneMaxWidth;
         }
     }
 
