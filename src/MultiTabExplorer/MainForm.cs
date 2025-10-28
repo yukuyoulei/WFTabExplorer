@@ -116,6 +116,21 @@ public class MainForm : Form
             SplitterDistance = 140,
             Panel1MinSize = 120,
         };
+        _split.SplitterMoving += (_, e) =>
+        {
+            if (e.SplitX > 200)
+            {
+                e.Cancel = true;
+                _split.SplitterDistance = 200;
+            }
+        };
+        _split.SplitterMoved += (_, __) =>
+        {
+            if (_split.SplitterDistance > 200)
+            {
+                _split.SplitterDistance = 200;
+            }
+        };
 
         _savedGroup = new GroupBox
         {
