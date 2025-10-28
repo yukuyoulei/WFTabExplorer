@@ -113,8 +113,8 @@ public class MainForm : Form
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
-            SplitterDistance = 180,
-            Panel1MinSize = 150,
+            SplitterDistance = 140,
+            Panel1MinSize = 120,
         };
 
         _savedGroup = new GroupBox

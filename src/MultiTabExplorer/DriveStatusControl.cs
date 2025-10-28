@@ -21,8 +21,8 @@ public class DriveStatusControl : UserControl
 
     public DriveStatusControl()
     {
-        Height = 80;
-        MinimumSize = new Size(0, 80);
+        Height = 72;
+        MinimumSize = new Size(0, 72);
         BorderStyle = BorderStyle.FixedSingle;
         Cursor = Cursors.Hand;
         Margin = new Padding(0, 0, 0, 8);
@@ -71,10 +71,11 @@ public class DriveStatusControl : UserControl
         {
             AutoSize = false,
             Dock = DockStyle.Top,
-            Height = 16,
+            Height = 32,
             Font = new Font(Font.FontFamily, 8),
-            TextAlign = ContentAlignment.MiddleLeft,
-            AutoEllipsis = true
+            TextAlign = ContentAlignment.TopLeft,
+            AutoEllipsis = false,
+            Padding = new Padding(0, 4, 0, 0)
         };
 
         _contentPanel.Controls.Add(_lblSpaceInfo);
@@ -156,25 +157,39 @@ public class DriveStatusControl : UserControl
                         ? percent.ToString("0.#")
                         : percent.ToString("0.##");
 
-                _lblSpaceInfo.Text = $"{FormatSize(freeBytes)} 可用 / 共 {FormatSize(totalBytes)} ({percentText}%)";
+                _lblSpaceInfo.Text = $"可用 {FormatSize(freeBytes)}\n已用 {FormatSize(usedBytes)} / 共 {FormatSize(totalBytes)} ({percentText}%)";
 
+                Color statusColor;
                 if (usedPercentage >= 90)
-                    _progressBar.ForeColor = Color.Red;
+                {
+                    statusColor = Color.Firebrick;
+                }
                 else if (usedPercentage >= 70)
-                    _progressBar.ForeColor = Color.Orange;
+                {
+                    statusColor = Color.DarkOrange;
+                }
                 else
-                    _progressBar.ForeColor = Color.Green;
+                {
+                    statusColor = SystemColors.ControlText;
+                }
+
+                _lblSpaceInfo.ForeColor = statusColor;
+                _progressBar.ForeColor = statusColor;
             }
             else
             {
                 _progressBar.Value = 0;
                 _lblSpaceInfo.Text = "驱动器未就绪";
+                _lblSpaceInfo.ForeColor = Color.Gray;
+                _progressBar.ForeColor = SystemColors.ControlDark;
             }
         }
         catch
         {
             _progressBar.Value = 0;
             _lblSpaceInfo.Text = "无法读取驱动器信息";
+            _lblSpaceInfo.ForeColor = Color.Gray;
+            _progressBar.ForeColor = SystemColors.ControlDark;
         }
 
         UpdateToolTip();
