@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -15,14 +16,6 @@ public class MainForm : Form
     private const int LeftPaneMaxWidth = 200;
 
     private readonly SplitContainer _split;
-    private readonly GroupBox _savedGroup;
-    private readonly ListBox _savedList;
-    private readonly FlowLayoutPanel _savedButtons;
-    private readonly Button _btnSaveCurrent;
-    private readonly Button _btnBrowseAdd;
-    private readonly Button _btnOpenSavedNewTab;
-    private readonly ToolTip _savedListToolTip;
-    private int _lastSavedListHoverIndex = -1;
 
     private readonly GroupBox _driveGroup;
     private readonly FlowLayoutPanel _drivePanel;
@@ -32,6 +25,8 @@ public class MainForm : Form
     private readonly ToolStrip _tool;
     private readonly ToolStripButton _btnNewTab;
     private readonly ToolStripButton _btnCloseTab;
+    private readonly ToolStripButton _btnBack;
+    private readonly ToolStripButton _btnForward;
     private readonly ToolStripButton _btnUp;
     private readonly ToolStripButton _btnBrowse;
     private readonly ToolStripLabel _lblAddress;
@@ -45,8 +40,8 @@ public class MainForm : Form
     private readonly ToolStripButton _setHotKeyButton;
 
     private readonly TabControl _tabs;
+    private readonly GlobalDoubleClickFilter _doubleClickFilter;
 
-    private readonly BindingList<string> _savedPaths = new();
     private AppConfig _config = new();
 
     // 面包屑管理
@@ -128,78 +123,6 @@ public class MainForm : Form
         _split.SplitterMoved += (_, __) => EnsureLeftPaneMaxWidth();
         _split.SizeChanged += (_, __) => EnsureLeftPaneMaxWidth();
 
-        _savedGroup = new GroupBox
-        {
-            Dock = DockStyle.Fill,
-            Text = "已保存的路径",
-            Padding = new Padding(8),
-        };
-        _savedList = new ListBox
-        {
-            Dock = DockStyle.Fill,
-            HorizontalScrollbar = true,
-        };
-        _savedList.DoubleClick += (_, __) =>
-        {
-            if (_savedList.SelectedItem is string path && Directory.Exists(path))
-            {
-                NavigateCurrentTo(path);
-            }
-        };
-        _savedList.KeyDown += (_, e) =>
-        {
-            if (e.KeyCode == Keys.Delete)
-            {
-                RemoveSelectedSavedPath();
-            }
-        };
-
-        _savedListToolTip = new ToolTip();
-        _savedList.MouseMove += OnSavedListMouseMove;
-        _savedList.MouseLeave += (_, __) =>
-        {
-            _savedListToolTip.Hide(_savedList);
-            _lastSavedListHoverIndex = -1;
-        };
-
-        _savedButtons = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom,
-            FlowDirection = FlowDirection.LeftToRight,
-            Height = 40,
-            Padding = new Padding(0),
-            Margin = new Padding(0)
-        };
-        _btnSaveCurrent = new Button { Text = "保存当前", AutoSize = true };
-        _btnBrowseAdd = new Button { Text = "浏览添加", AutoSize = true };
-        _btnOpenSavedNewTab = new Button { Text = "在新标签打开", AutoSize = true };
-
-        _btnSaveCurrent.Click += (_, __) =>
-        {
-            var path = GetActiveExplorerTab()?.CurrentPath ?? _txtAddress.Text.Trim();
-            TryAddSavedPath(path);
-        };
-        _btnBrowseAdd.Click += (_, __) =>
-        {
-            using var dlg = new FolderBrowserDialog();
-            dlg.Description = "选择要保存的文件夹";
-            if (dlg.ShowDialog(this) == DialogResult.OK)
-            {
-                TryAddSavedPath(dlg.SelectedPath);
-            }
-        };
-        _btnOpenSavedNewTab.Click += (_, __) =>
-        {
-            if (_savedList.SelectedItem is string path && Directory.Exists(path))
-            {
-                AddNewTab(path);
-            }
-        };
-
-        _savedButtons.Controls.AddRange(new Control[] { _btnSaveCurrent, _btnBrowseAdd, _btnOpenSavedNewTab });
-        _savedGroup.Controls.Add(_savedList);
-        _savedGroup.Controls.Add(_savedButtons);
-
         _driveGroup = new GroupBox
         {
             Dock = DockStyle.Fill,
@@ -217,19 +140,8 @@ public class MainForm : Form
         _drivePanel.Resize += (_, __) => UpdateDriveControlWidths();
         _driveGroup.Controls.Add(_drivePanel);
 
-        var leftLayout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 2,
-            Margin = new Padding(0),
-            Padding = new Padding(0)
-        };
-        leftLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
-        leftLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
-        leftLayout.Controls.Add(_driveGroup, 0, 0);
-        leftLayout.Controls.Add(_savedGroup, 0, 1);
-        _split.Panel1.Controls.Add(leftLayout);
+        _driveGroup.Dock = DockStyle.Fill;
+        _split.Panel1.Controls.Add(_driveGroup);
 
         _driveRefreshTimer = new System.Windows.Forms.Timer
         {
@@ -241,6 +153,8 @@ public class MainForm : Form
         _tool = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Dock = DockStyle.Top, RenderMode = ToolStripRenderMode.System };
         _btnNewTab = new ToolStripButton("新建标签");
         _btnCloseTab = new ToolStripButton("关闭标签");
+        _btnBack = new ToolStripButton("后退") { Enabled = false };
+        _btnForward = new ToolStripButton("前进") { Enabled = false };
         _btnUp = new ToolStripButton("上级");
         _btnBrowse = new ToolStripButton("浏览");
         _lblAddress = new ToolStripLabel("地址:");
@@ -249,6 +163,8 @@ public class MainForm : Form
 
         _btnNewTab.Click += (_, __) => AddNewTab(GetActiveExplorerTab()?.CurrentPath);
         _btnCloseTab.Click += (_, __) => CloseActiveTab();
+        _btnBack.Click += (_, __) => GetActiveExplorerTab()?.GoBack();
+        _btnForward.Click += (_, __) => GetActiveExplorerTab()?.GoForward();
         _btnUp.Click += (_, __) => GetActiveExplorerTab()?.NavigateUp();
         _btnBrowse.Click += (_, __) =>
         {
@@ -273,6 +189,9 @@ public class MainForm : Form
             _btnNewTab,
             _btnCloseTab,
             new ToolStripSeparator(),
+            _btnBack,
+            _btnForward,
+            new ToolStripSeparator(),
             _btnUp,
             _btnBrowse,
             new ToolStripSeparator(),
@@ -287,6 +206,7 @@ public class MainForm : Form
             if (tab != null)
             {
                 UpdateBreadcrumb(tab.CurrentPath);
+                UpdateNavigationButtons();
             }
         };
 
@@ -348,11 +268,18 @@ public class MainForm : Form
         Controls.Add(_split);
 
         Load += (_, __) => OnLoaded();
-        FormClosing += (_, __) =>
+        FormClosing += (_, e) =>
         {
             _driveRefreshTimer?.Stop();
             SaveConfig();
+            if (!e.Cancel)
+            {
+                Application.RemoveMessageFilter(_doubleClickFilter);
+            }
         };
+
+        _doubleClickFilter = new GlobalDoubleClickFilter(this);
+        Application.AddMessageFilter(_doubleClickFilter);
 
         _autoClickTimer = new System.Threading.Timer(callback: _ =>
         {
@@ -388,9 +315,6 @@ public class MainForm : Form
 
     private void OnLoaded()
     {
-        _split.Panel1Collapsed = false;
-        _driveGroup.Visible = true;
-        _savedGroup.Visible = true;
         EnsureLeftPaneMaxWidth();
 
         _config = ConfigService.Load();
@@ -401,16 +325,18 @@ public class MainForm : Form
             _hotKeyLabel.Text = "热键: " + hotKey.ToString();
         }
         _freqTextBox.Text = _config.ClickFrequency.ToString();
-        
-        foreach (var p in _config.SavedPaths.Distinct().Where(Directory.Exists))
-            _savedPaths.Add(p);
-        _savedList.DataSource = _savedPaths;
 
-        var existing = _savedPaths.Distinct().Where(Directory.Exists).ToList();
-        if (existing.Count > 0)
+        var startPaths = (_config.SavedPaths ?? new List<string>())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(Directory.Exists)
+            .ToList();
+
+        if (startPaths.Count > 0)
         {
-            foreach (var p in existing)
+            foreach (var p in startPaths)
+            {
                 AddNewTab(p);
+            }
         }
         else
         {
@@ -420,30 +346,7 @@ public class MainForm : Form
 
         RefreshDriveList();
         _driveRefreshTimer.Start();
-    }
-
-    private void TryAddSavedPath(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return;
-        if (!Directory.Exists(path))
-        {
-            MessageBox.Show(this, "路径不存在", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
-        }
-        if (!_savedPaths.Contains(path))
-        {
-            _savedPaths.Add(path);
-            SaveConfig();
-        }
-    }
-
-    private void RemoveSelectedSavedPath()
-    {
-        if (_savedList.SelectedItem is string toRemove)
-        {
-            _savedPaths.Remove(toRemove);
-            SaveConfig();
-        }
+        UpdateNavigationButtons();
     }
 
     private ExplorerTab? GetActiveExplorerTab()
@@ -468,6 +371,13 @@ public class MainForm : Form
                 _tabs.SelectedTab.Text = Path.GetFileName(p).Length > 0 ? Path.GetFileName(p) : p;
             }
             SaveOpenTabsToConfig();
+        };
+        tab.HistoryChanged += () =>
+        {
+            if (_tabs.SelectedTab?.Tag == tab)
+            {
+                UpdateNavigationButtons();
+            }
         };
         tab.ItemActivated += (fullPath, isDirectory) =>
         {
@@ -540,9 +450,7 @@ public class MainForm : Form
             }
         }
 
-        _savedPaths.Clear();
-        foreach (var p in paths)
-            _savedPaths.Add(p);
+        _config.SavedPaths = paths;
         SaveConfig();
     }
 
@@ -610,7 +518,6 @@ public class MainForm : Form
 
     private void SaveConfig()
     {
-        _config.SavedPaths = _savedPaths.ToList();
         if (int.TryParse(_freqTextBox.Text, out int freq))
         {
             _config.ClickFrequency = freq;
@@ -692,6 +599,16 @@ public class MainForm : Form
         {
             var tab = GetActiveExplorerTab();
             tab?.NavigateUp();
+            return true;
+        }
+        if (keyData == (Keys.Alt | Keys.Left))
+        {
+            GetActiveExplorerTab()?.GoBack();
+            return true;
+        }
+        if (keyData == (Keys.Alt | Keys.Right))
+        {
+            GetActiveExplorerTab()?.GoForward();
             return true;
         }
         if (keyData == (Keys.Alt | Keys.D) || keyData == (Keys.Control | Keys.L))
@@ -906,33 +823,84 @@ public class MainForm : Form
         }
     }
 
-    private void OnSavedListMouseMove(object? sender, MouseEventArgs e)
+    private void UpdateNavigationButtons()
     {
-        var index = _savedList.IndexFromPoint(e.Location);
-        if (index >= 0 && index < _savedList.Items.Count)
-        {
-            var item = _savedList.Items[index];
-            var itemText = item?.ToString() ?? string.Empty;
-            var currentTip = _savedListToolTip.GetToolTip(_savedList) ?? string.Empty;
+        var tab = GetActiveExplorerTab();
+        _btnBack.Enabled = tab?.CanGoBack ?? false;
+        _btnForward.Enabled = tab?.CanGoForward ?? false;
+    }
 
-            if (index != _lastSavedListHoverIndex || !string.Equals(itemText, currentTip, StringComparison.Ordinal))
+    private bool IsWithinExplorerView(Control? control)
+    {
+        while (control != null)
+        {
+            if (control is ExplorerTab || control is WebBrowser)
             {
-                if (!string.IsNullOrWhiteSpace(itemText))
-                {
-                    _savedListToolTip.SetToolTip(_savedList, itemText);
-                }
-                else
-                {
-                    _savedListToolTip.Hide(_savedList);
-                }
-
-                _lastSavedListHoverIndex = index;
+                return true;
             }
+            control = control.Parent;
         }
-        else if (_lastSavedListHoverIndex != -1)
+        return false;
+    }
+
+    private void HandleGlobalDoubleClick(Control? originControl, Point screenPoint)
+    {
+        if (originControl == null) return;
+        if (originControl.FindForm() != this) return;
+
+        var target = GetControlAtScreenPoint(screenPoint);
+        if (target == null) return;
+        if (IsWithinExplorerView(target)) return;
+
+        AddNewTab(GetActiveExplorerTab()?.CurrentPath);
+    }
+
+    private Control? GetControlAtScreenPoint(Point screenPoint)
+    {
+        if (!RectangleToScreen(ClientRectangle).Contains(screenPoint))
         {
-            _savedListToolTip.Hide(_savedList);
-            _lastSavedListHoverIndex = -1;
+            return null;
+        }
+
+        Control? current = this;
+        while (current != null)
+        {
+            var clientPoint = current.PointToClient(screenPoint);
+            var child = current.GetChildAtPoint(clientPoint, GetChildAtPointSkip.Invisible | GetChildAtPointSkip.Transparent);
+            if (child == null)
+            {
+                return current;
+            }
+            current = child;
+        }
+
+        return null;
+    }
+
+    private sealed class GlobalDoubleClickFilter : IMessageFilter
+    {
+        private const int WM_LBUTTONDBLCLK = 0x0203;
+        private readonly MainForm _owner;
+
+        public GlobalDoubleClickFilter(MainForm owner)
+        {
+            _owner = owner;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out Point lpPoint);
+
+        public bool PreFilterMessage(ref Message m)
+        {
+            if (m.Msg == WM_LBUTTONDBLCLK)
+            {
+                var control = Control.FromChildHandle(m.HWnd);
+                if (control != null && GetCursorPos(out Point cursorPos))
+                {
+                    _owner.HandleGlobalDoubleClick(control, cursorPos);
+                }
+            }
+            return false;
         }
     }
 }

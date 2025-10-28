@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Windows.Forms;
 
@@ -7,12 +8,20 @@ namespace MultiTabExplorer;
 public class ExplorerTab : UserControl
 {
     private readonly WebBrowser _browser;
+    private readonly Stack<string> _backStack = new();
+    private readonly Stack<string> _forwardStack = new();
+    private bool _isNavigatingFromHistory = false;
 
     public string CurrentPath { get; private set; } = string.Empty;
 
     public event Action<string>? PathChanged;
     // Kept for compatibility with MainForm wiring; not used with WebBrowser-based rendering.
     public event Action<string, bool>? ItemActivated; // (fullPath, isDirectory)
+    
+    public event Action? HistoryChanged;
+    
+    public bool CanGoBack => _backStack.Count > 0;
+    public bool CanGoForward => _forwardStack.Count > 0;
 
     public ExplorerTab()
     {
@@ -38,19 +47,29 @@ public class ExplorerTab : UserControl
         Controls.Add(_browser);
     }
 
-    public void NavigateTo(string path)
+    public void NavigateTo(string path, bool recordHistory = true)
     {
-        if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
+        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return;
+
+        var fullPath = Path.GetFullPath(path);
+        if (string.Equals(CurrentPath, fullPath, StringComparison.OrdinalIgnoreCase)) return;
+
+        if (recordHistory && !string.IsNullOrEmpty(CurrentPath))
         {
-            try
-            {
-                // WebBrowser accepts file system paths directly
-                _browser.Navigate(path);
-            }
-            catch
-            {
-                // ignore navigation errors
-            }
+            _backStack.Push(CurrentPath);
+            _forwardStack.Clear();
+            HistoryChanged?.Invoke();
+        }
+
+        _isNavigatingFromHistory = !recordHistory;
+
+        try
+        {
+            _browser.Navigate(fullPath);
+        }
+        catch
+        {
+            _isNavigatingFromHistory = false;
         }
     }
 
@@ -59,6 +78,46 @@ public class ExplorerTab : UserControl
         if (string.IsNullOrEmpty(CurrentPath)) return;
         var parent = Directory.GetParent(CurrentPath);
         if (parent != null) NavigateTo(parent.FullName);
+    }
+
+    public void GoBack()
+    {
+        if (!CanGoBack) return;
+
+        var target = _backStack.Pop();
+        if (!Directory.Exists(target))
+        {
+            HistoryChanged?.Invoke();
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(CurrentPath))
+        {
+            _forwardStack.Push(CurrentPath);
+        }
+
+        HistoryChanged?.Invoke();
+        NavigateTo(target, recordHistory: false);
+    }
+
+    public void GoForward()
+    {
+        if (!CanGoForward) return;
+
+        var target = _forwardStack.Pop();
+        if (!Directory.Exists(target))
+        {
+            HistoryChanged?.Invoke();
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(CurrentPath))
+        {
+            _backStack.Push(CurrentPath);
+        }
+
+        HistoryChanged?.Invoke();
+        NavigateTo(target, recordHistory: false);
     }
 
     public void RefreshView()
@@ -96,11 +155,17 @@ public class ExplorerTab : UserControl
             }
         }
 
-        if (!string.IsNullOrEmpty(newPath) && !string.Equals(CurrentPath, newPath, StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrEmpty(newPath))
         {
-            CurrentPath = newPath;
-            PathChanged?.Invoke(CurrentPath);
+            if (!string.Equals(CurrentPath, newPath, StringComparison.OrdinalIgnoreCase))
+            {
+                CurrentPath = newPath;
+                PathChanged?.Invoke(CurrentPath);
+            }
         }
+
+        _isNavigatingFromHistory = false;
+        HistoryChanged?.Invoke();
     }
 
     public void CreateNewFolder()
