@@ -6,7 +6,6 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Threading;
 using System.Windows.Forms;
 
 namespace MultiTabExplorer;
@@ -34,10 +33,8 @@ public class MainForm : Form
     private readonly ToolStripButton _btnGo;
 
     private readonly ToolStrip _bottomTool;
-    private readonly ToolStripLabel _hotKeyLabel;
-    private readonly ToolStripTextBox _freqTextBox;
-    private readonly ToolStripButton _startButton;
-    private readonly ToolStripButton _setHotKeyButton;
+    private readonly ToolStripLabel _pidLabel;
+    private System.Windows.Forms.Timer _pidUpdateTimer;
 
     private readonly TabControl _tabs;
     private readonly GlobalDoubleClickFilter _doubleClickFilter;
@@ -51,50 +48,11 @@ public class MainForm : Form
     // 地址编辑状态
     private bool _isEditingAddress = false;
 
-    private System.Threading.Timer _autoClickTimer;
-    private Keys _autoClickHotKey = Keys.None;
-    private bool _isAutoClicking = false;
+    [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(Point pt);
 
     [DllImport("user32.dll")]
-    private static extern bool RegisterHotKey(IntPtr hWnd, int id, int fsModifiers, int vk);
-
-    [DllImport("user32.dll")]
-    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
-
-    // [DllImport("user32.dll")]
-    // static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
-    
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct INPUT
-    {
-        public uint type;
-        public InputUnion u;
-    }
-
-    [StructLayout(LayoutKind.Explicit)]
-    private struct InputUnion
-    {
-        [FieldOffset(0)]
-        public MOUSEINPUT mi;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MOUSEINPUT
-    {
-        public int dx;
-        public int dy;
-        public uint mouseData;
-        public uint dwFlags;
-        public uint time;
-        public IntPtr dwExtraInfo;
-    }
-
-    private const int INPUT_MOUSE = 0;
-    private const int MOUSEEVENTF_LEFTDOWN = 0x02;
-    private const int MOUSEEVENTF_LEFTUP = 0x04;
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
     public MainForm()
     {
@@ -216,61 +174,21 @@ public class MainForm : Form
         _split.Panel2.Controls.Add(rightPanel);
 
         _bottomTool = new ToolStrip { Dock = DockStyle.Bottom };
-        _hotKeyLabel = new ToolStripLabel("热键: " + _autoClickHotKey.ToString());
-        _freqTextBox = new ToolStripTextBox { Text = _config.ClickFrequency.ToString(), Width = 50 };
-        _startButton = new ToolStripButton("开始");
-        _setHotKeyButton = new ToolStripButton("设置热键");
+        _pidLabel = new ToolStripLabel("鼠标位置进程ID: -");
 
-        _startButton.Click += (_, __) =>
-        {
-            if (_isAutoClicking)
-            {
-                StopAutoClick();
-            }
-            else
-            {
-                StartAutoClick();
-            }
-        };
-
-        _setHotKeyButton.Click += (_, __) =>
-        {
-            var result = MessageBox.Show("请按下新的热键，或者按 Esc 取消", "设置热键", MessageBoxButtons.OKCancel);
-            if (result == DialogResult.OK)
-            {
-                // Temporarily listen for the next key press
-                KeyEventHandler handler = null;
-                handler = (s, e) =>
-                {
-                    if (e.KeyCode != Keys.Escape)
-                    {
-                        OnHotKeyChanged(e.KeyCode);
-                        _hotKeyLabel.Text = "热键: " + e.KeyCode.ToString();
-                        _config.HotKey = e.KeyCode.ToString();
-                        SaveConfig();
-                    }
-                    KeyDown -= handler;
-                };
-                KeyDown += handler;
-            }
-        };
-
-        _bottomTool.Items.AddRange(new ToolStripItem[]
-        {
-            new ToolStripLabel("点击频率 (Hz):"),
-            _freqTextBox,
-            _startButton,
-            new ToolStripSeparator(),
-            _hotKeyLabel,
-            _setHotKeyButton
-        });
+        _bottomTool.Items.Add(_pidLabel);
         Controls.Add(_bottomTool);
         Controls.Add(_split);
+
+        _pidUpdateTimer = new System.Windows.Forms.Timer { Interval = 100 };
+        _pidUpdateTimer.Tick += (_, __) => UpdateMousePositionPid();
 
         Load += (_, __) => OnLoaded();
         FormClosing += (_, e) =>
         {
             _driveRefreshTimer?.Stop();
+            _pidUpdateTimer?.Stop();
+            _pidUpdateTimer?.Dispose();
             SaveConfig();
             if (!e.Cancel)
             {
@@ -280,37 +198,6 @@ public class MainForm : Form
 
         _doubleClickFilter = new GlobalDoubleClickFilter(this);
         Application.AddMessageFilter(_doubleClickFilter);
-
-        _autoClickTimer = new System.Threading.Timer(callback: _ =>
-        {
-            INPUT[] inputs = new INPUT[]
-            {
-                new INPUT
-                {
-                    type = INPUT_MOUSE,
-                    u = new InputUnion
-                    {
-                        mi = new MOUSEINPUT
-                        {
-                            dwFlags = MOUSEEVENTF_LEFTDOWN
-                        }
-                    }
-                },
-                new INPUT
-                {
-                    type = INPUT_MOUSE,
-                    u = new InputUnion
-                    {
-                        mi = new MOUSEINPUT
-                        {
-                            dwFlags = MOUSEEVENTF_LEFTUP
-                        }
-                    }
-                }
-            };
-
-            SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
-        }, null, Timeout.Infinite, Timeout.Infinite);
     }
 
     private void OnLoaded()
@@ -318,13 +205,6 @@ public class MainForm : Form
         EnsureLeftPaneMaxWidth();
 
         _config = ConfigService.Load();
-
-        if (Enum.TryParse<Keys>(_config.HotKey, out Keys hotKey))
-        {
-            OnHotKeyChanged(hotKey);
-            _hotKeyLabel.Text = "热键: " + hotKey.ToString();
-        }
-        _freqTextBox.Text = _config.ClickFrequency.ToString();
 
         var startPaths = (_config.SavedPaths ?? new List<string>())
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -346,6 +226,7 @@ public class MainForm : Form
 
         RefreshDriveList();
         _driveRefreshTimer.Start();
+        _pidUpdateTimer?.Start();
         UpdateNavigationButtons();
     }
 
@@ -518,31 +399,7 @@ public class MainForm : Form
 
     private void SaveConfig()
     {
-        if (int.TryParse(_freqTextBox.Text, out int freq))
-        {
-            _config.ClickFrequency = freq;
-        }
-        else
-        {
-            _config.ClickFrequency = 10;
-        }
         ConfigService.Save(_config);
-    }
-
-    private void OnHotKeyChanged(Keys newHotKey)
-    {
-        // Unregister the old hot key
-        if (_autoClickHotKey != Keys.None)
-        {
-            UnregisterHotKey(Handle, 0);
-        }
-
-        // Register the new hot key
-        _autoClickHotKey = newHotKey;
-        if (_autoClickHotKey != Keys.None)
-        {
-            RegisterHotKey(Handle, 0, 0, (int)_autoClickHotKey);
-        }
     }
 
     private void OnMainFormKeyDown(object? sender, KeyEventArgs e)
@@ -555,27 +412,30 @@ public class MainForm : Form
         }
     }
 
-    private void StartAutoClick()
+    private void UpdateMousePositionPid()
     {
-        if (int.TryParse(_freqTextBox.Text, out int freq) && freq > 0)
+        try
         {
-            _isAutoClicking = true;
-            _startButton.Text = "停止";
-            _autoClickTimer.Change(0, 1000 / freq);
+            Point cursorPos = Cursor.Position;
+            IntPtr hWnd = WindowFromPoint(cursorPos);
+            
+            if (hWnd != IntPtr.Zero)
+            {
+                GetWindowThreadProcessId(hWnd, out uint processId);
+                if (processId > 0)
+                {
+                    _pidLabel.Text = $"鼠标位置进程ID: {processId}";
+                    return;
+                }
+            }
         }
-        else
+        catch
         {
-            MessageBox.Show("无效的频率");
+            // ignore errors
         }
+        
+        _pidLabel.Text = "鼠标位置进程ID: -";
     }
-
-    private void StopAutoClick()
-    {
-        _isAutoClicking = false;
-        _startButton.Text = "开始";
-        _autoClickTimer.Change(Timeout.Infinite, Timeout.Infinite);
-    }
-
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
@@ -632,23 +492,6 @@ public class MainForm : Form
         return base.ProcessCmdKey(ref msg, keyData);
     }
 
-    protected override void WndProc(ref Message m)
-    {
-        base.WndProc(ref m);
-
-        if (m.Msg == 0x0312)
-        {
-            if (_isAutoClicking)
-            {
-                StopAutoClick();
-            }
-            else
-            {
-                StartAutoClick();
-            }
-        }
-    }
-    
     private void StartAddressEdit()
     {
         if (_isEditingAddress) return;
